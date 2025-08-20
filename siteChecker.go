@@ -2,43 +2,52 @@ package main
 
 import (
 	"fmt"
-	"os"
-	"bufio"
+	"math/rand"
 	"os/exec"
-	"sync"
+	"time"
 )
 
-func main() {
+func worker(id int, jobs <-chan string, results chan<- string) {
+	for job := range jobs {
 
-	filePath := "site.txt"
-
-	file, err := os.Open(filePath)
+		result, err := exec.Command("cmd", "/C", "ping", job).CombinedOutput()
 		if err != nil {
-			fmt.Println("Unable to read file")
 			fmt.Println(err)
 		}
-	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
+		//Simulate some time as can't ping using CMD from online Go compiler
+		time.Sleep(time.Duration(rand.Intn(3)+1) * time.Second)
 
-	var pingWG sync.WaitGroup
-
-	for scanner.Scan() {
-		address := scanner.Text()
-		if address == "" {
-			continue
-		}
-		//fmt.Println(line)
-
-		pingWG.Add(1)
-		go func(addr string) {
-			defer pingWG.Done()
-			output, err := exec.Command("cmd", "/C", "ping", addr).CombinedOutput()
-			if err != nil {
-				fmt.Println(err)
-			}
-			fmt.Println(string(output))
-		}(address)
+		results <- fmt.Sprintf("%s", result)
 	}
-	pingWG.Wait()
+}
+
+func main() {
+	jobs := make(chan string, 10)
+	results := make(chan string, 10)
+
+	for id := 1; id <= 3; id++ {
+		go worker(id, jobs, results)
+	}
+
+	urls := []string{
+		"www.google.com",
+		"www.github.com",
+		"www.facebook.com",
+		"www.x.com",
+		"www.buddytelco.com.au",
+		"www.aussiebroadband.com.au",
+		"www.telstra.com",
+		"www.optus.com.au",
+		"8.8.8.8",
+	}
+
+	for _, u := range urls {
+		jobs <- u
+	}
+	close(jobs)
+
+	for i := 0; i < len(urls); i++ {
+		fmt.Println(<-results)
+	}
 }
