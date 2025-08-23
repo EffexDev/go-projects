@@ -44,7 +44,7 @@ func Orchestrator(seedURLs []string) []Result {
 	var scraperWG, linksWG sync.WaitGroup
 
 //	Create worker pool for concurrently checking multiple seed URLs to find any links
-	for i := 0; i <=10; i++ {
+	for i := 0; i <= 10; i++ {
 		scraperWG.Add(1)
 		go func() {
 			defer scraperWG.Done()
