@@ -8,17 +8,26 @@ import (
 	"net/url"
 )
 
+//Edit worker count to scale
+const workerCount = 12
+
+const (
+	ColorRed    = "\033[31m"
+	ColorGreen  = "\033[32m"
+	ColorBlue   = "\033[34m"
+	ColorYellow = "\033[33m"
+	ColorReset  = "\033[0m"
+)
+
 type Result struct {
 	URL    string
 	Link   string
 	Status string
 }
 
-const workerCount = 50
-
 func main() {
 	seedURLs := []string{
-		"https://github.com",
+		"https://buddytelco.com.au",
 	}
 
 	results := Orchestrator(seedURLs)
@@ -35,7 +44,7 @@ func Orchestrator(seedURLs []string) []Result {
 	var scraperWG, linksWG sync.WaitGroup
 
 	//	Create worker pool for concurrently checking multiple seed URLs to find any links
-	for i := 0; i <= workerCount; i++ {
+	for i := 0; i < workerCount; i++ {
 		scraperWG.Add(1)
 		go func() {
 			defer scraperWG.Done()
@@ -58,14 +67,14 @@ func Orchestrator(seedURLs []string) []Result {
 	}()
 
 	//	Create worker pool for checking the status of the links scraped by the previous worker group
-	for i := 0; i <= workerCount; i++ {
+	for i := 0; i < workerCount; i++ {
 		linksWG.Add(1)
 		go func() {
 			defer linksWG.Done()
 			//Ranges over a slice of structs so we need to grab specifically the link item of each struct and send that to the linkchecker function. That then needs to send a HEAD request to each of the links and return the STATUS code which we assign to the Status item of the struct, then append each struct in full to the slice of structs declared at the top
 			for s := range linksChannel {
-				//status := linkChecker(s.Link)
-				//s.Status = status
+				status := linkChecker(s.Link)
+				s.Status = status
 				results = append(results, s)
 			}
 		}()
@@ -110,4 +119,22 @@ func webScraper(site string) []string {
 		}
 	})
 	return links
+}
+
+func linkChecker(link string) string {
+	resp, err := http.Head(link)
+	if err != nil {
+		return "Failed"
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 && resp.StatusCode != 403 {
+		return fmt.Sprintf(ColorRed+"Dead - %d"+ColorReset, resp.StatusCode)
+	}
+
+	if resp.StatusCode == 403 {
+		return fmt.Sprintf(ColorYellow + "Unauthorised" + ColorReset)
+	}
+
+	return fmt.Sprintf(ColorGreen+"OK - %d"+ColorReset, resp.StatusCode)
 }
