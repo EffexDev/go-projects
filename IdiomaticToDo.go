@@ -4,6 +4,11 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"os"
+	"os/exec"
+	"runtime"
+	"bufio"
+	"strings"
 )
 
 const (
@@ -22,6 +27,20 @@ type toDoItem struct {
 
 type toDoList []toDoItem
 
+func ClearTerminal() {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "cls")
+	default: // Linux, macOS, etc.
+		cmd = exec.Command("clear")
+	}
+
+	cmd.Stdout = os.Stdout
+	cmd.Run()
+}
+
 func (t *toDoList) AddItem(taskDetails string) {
 	newItem := toDoItem{
 		number:  len(*t) + 1,
@@ -39,65 +58,114 @@ func (t *toDoList) CompleteItem(taskNumber int) {
 }
 
 func main() {
-	todos := toDoList{
-		{1, "Create a OOP todo in Go", false},
-	}
+	todos := toDoList{}
 
-	menuChoice := "3"
-	itemToDelete := "1"
-	taskToAdd := "Publish to Github"
+	var menuChoice string
+	var itemToDelete string
+	var taskToAdd string
+	var itemToComplete string
 
-	fmt.Println("Welcome to your daily task list!\n\nPlease select an option:")
-	fmt.Println(ColorBlue + "1. Add new task" + ColorReset)
-	fmt.Println(ColorYellow + "2. List all tasks" + ColorReset)
-	fmt.Println(ColorGreen + "3. Complete a task" + ColorReset)
-	fmt.Println(ColorRed + "4. Delete a task" + ColorReset)
+	for {
+		fmt.Println("\nWelcome to your daily task list!\n\nPlease select an option:")
+		fmt.Println(ColorBlue + "1. Add new task" + ColorReset)
+		fmt.Println(ColorYellow + "2. List all tasks" + ColorReset)
+		fmt.Println(ColorGreen + "3. Complete a task" + ColorReset)
+		fmt.Println(ColorRed + "4. Delete a task" + ColorReset)
 
-	// fmt.Scan(&menuChoice)
-	// if menuChoice == "" {
-	// 	fmt.Println("Please enter a number")
-	// }
-
-	choice, err := strconv.Atoi(menuChoice)
-	if err != nil {
-		fmt.Println("Failed to parse choice to integer")
-		return
-	}
-
-	switch choice {
-	case 1:
-		todos.AddItem(taskToAdd)
-		fmt.Println("\n---------\nTask added. Current list:\n---------\n")
-		for _, t := range todos {
-			fmt.Printf("%d. %s - Completed: %v\n", t.number, t.details, t.completion)
+		fmt.Scan(&menuChoice)
+		if menuChoice == "" {
+			fmt.Println("Please enter a number")
 		}
-	case 2:
-		fmt.Println("\n---------\nCurrent task list:\n---------\n")
-		for _, t := range todos {
-			fmt.Printf("%d. %s - Completed: %v\n", t.number, t.details, t.completion)
-		}
-	case 3:
-		itemToComplete := "1"
-		fmt.Println("\n---------\nWhich task would you like to complete? (Enter the task number)\n---------\n")
-		fmt.Scan(&itemToComplete)
 
-		num, err := strconv.Atoi(itemToComplete)
+		choice, err := strconv.Atoi(menuChoice)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Failed to parse choice to integer")
 		}
-		todos.CompleteItem(num)
-		fmt.Println("---------")
-		fmt.Println("Task Completed. Current tasks:")
-		for _, t := range todos {
-			fmt.Printf("%d. %s - Completed: %v\n", t.number, t.details, t.completion)
-		}
-	case 4:
-		num, err := strconv.Atoi(itemToDelete)
-		if err != nil {
-			fmt.Println(err)
-		}
-		todos.DeleteItem(num)
-		fmt.Println(todos)
-	}
 
+		switch choice {
+		case 1:
+			reader := bufio.NewReader(os.Stdin)
+			reader.ReadString('\n')
+			fmt.Println("Enter the task you would like to add.")
+			taskToAdd, _ = reader.ReadString('\n')
+			taskToAdd = strings.TrimSpace(taskToAdd)
+			todos.AddItem(taskToAdd)
+			ClearTerminal()
+			fmt.Println("\n---------\nTask added. Current list:\n---------\n")
+			for _, t := range todos {
+				if t.completion == true {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorGreen+"%v\n"+ColorReset, t.completion)
+				} else {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorRed+"%v\n"+ColorReset, t.completion)
+				}
+			}
+		case 2:
+			ClearTerminal()
+			fmt.Println("\n---------\nCurrent task list:\n---------\n")
+			for _, t := range todos {
+				if t.completion == true {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorGreen+"%v\n"+ColorReset, t.completion)
+				} else {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorRed+"%v\n"+ColorReset, t.completion)
+				}
+			}
+		case 3:
+			fmt.Println("\n---------\nWhich task would you like to complete? (Enter the task number)\n---------\n")
+			fmt.Scan(&itemToComplete)
+
+			num, err := strconv.Atoi(itemToComplete)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			if num >= len(todos)+1 {
+				ClearTerminal()
+				fmt.Println("Task does not exist")
+				continue
+			}
+
+			todos.CompleteItem(num)
+			ClearTerminal()
+			fmt.Println("---------")
+			fmt.Println("Task Completed. Current tasks:")
+			for _, t := range todos {
+				if t.completion == true {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorGreen+"%v\n"+ColorReset, t.completion)
+				} else {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorRed+"%v\n"+ColorReset, t.completion)
+				}
+			}
+		case 4:
+			fmt.Println("Which task would you like to remove?")
+			fmt.Scan(&itemToDelete)
+
+			num, err := strconv.Atoi(itemToDelete)
+			if err != nil {
+				fmt.Println(err)
+			}
+
+			if num >= len(todos)+1 {
+				ClearTerminal()
+				fmt.Println("Task does not exist")
+				continue
+			}
+
+			todos.DeleteItem(num)
+			for _, t := range todos {
+				if t.completion == true {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorGreen+"%v\n"+ColorReset, t.completion)
+				} else {
+					fmt.Printf("%d. %s - Completed ", t.number, t.details)
+					fmt.Printf(ColorRed+"%v\n"+ColorReset, t.completion)
+				}
+			}
+		}
+	}
 }
