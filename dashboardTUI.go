@@ -8,9 +8,15 @@ import (
 	"os/exec"
 	"runtime"
 	"time"
+	"context"
+	"log"
+
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/jackc/pgx/v5"
 )
+
+const DATABASE_URL = "postgresql://postgres.cqikkdyfgrzzqqkhscis:Fxz@4574896523@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres"
 
 // Styles with LipGloss
 var (
@@ -53,12 +59,10 @@ type model struct {
 	weatherData   WeatherResponse
 	githubRepos   []Repo
 	newsHeadlines []string
-	choices       []string
-	cursor        int
-	selected      map[int]struct{}
 	inputMode     bool
 	inputBuffer   string
 	CPUPercent    float32
+	tasks []Task
 }
 
 type tickMsg struct{}
@@ -92,10 +96,24 @@ type Repo struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type Task struct {
+	ID int
+	Task string
+	DueDate time.Time
+	Completed bool
+}
+
 func initialModel() model {
+	conn := connectDB()
+	defer conn.Close(context.Background())
+
+	tasks, err := fetchTasks(conn)
+	if err != nil {
+		log.Fatalf("Failed to fetch tasks: %v", err)
+	}
+
 	return model{
-		choices:  []string{},
-		selected: make(map[int]struct{}),
+		tasks: tasks,
 	}
 }
 
@@ -142,53 +160,9 @@ func loadData() tea.Cmd {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		if m.inputMode {
-			switch msg.Type {
-			case tea.KeyEnter:
-				// Save the item and exit input mode
-				if len(m.inputBuffer) > 0 {
-					m.choices = append(m.choices, m.inputBuffer)
-				}
-				m.inputMode = false
-				m.inputBuffer = ""
-			case tea.KeyEsc:
-				// Cancel input
-				m.inputMode = false
-				m.inputBuffer = ""
-			case tea.KeyBackspace, tea.KeyDelete:
-				if len(m.inputBuffer) > 0 {
-					m.inputBuffer = m.inputBuffer[:len(m.inputBuffer)-1]
-				}
-			default:
-				if msg.String() != "" && len(msg.String()) == 1 {
-					m.inputBuffer += msg.String()
-				}
-			}
-		} else {
-			switch msg.String() {
-			case "ctrl+c", "q":
-				return m, tea.Quit
-			case "up", "k":
-				if m.cursor > 0 {
-					m.cursor--
-				}
-			case "down", "j":
-				if m.cursor < len(m.choices)-1 {
-					m.cursor++
-				}
-			case "i":
-				// Enter input mode
-				m.inputMode = true
-				m.inputBuffer = ""
-			case "enter", " ":
-				// Toggle selection
-				_, ok := m.selected[m.cursor]
-				if ok {
-					delete(m.selected, m.cursor)
-				} else {
-					m.selected[m.cursor] = struct{}{}
-				}
-			}
+		switch msg.String() {
+		case "ctrl+c", "q":
+			return m, tea.Quit
 		}
 	case struct {
 		Weather WeatherResponse
@@ -332,7 +306,7 @@ func (m model) View() string {
 			if i >= 3 { // limit to 5 headlines
 				break
 			}
-			newsLines = append(newsLines, newsStyle.Render(h+"\n"))
+			newsLines = append(newsLines, newsStyle.Render("\n"+h))
 		}
 	}
 	newsBox := borderStyle.Render(lipgloss.JoinVertical(lipgloss.Top, newsLines...))
@@ -340,18 +314,18 @@ func (m model) View() string {
 	todoTitle := titleStyle.Render("To-Do List")
 	var todoList []string
 	todoList = append(todoList, todoTitle)
-	for i, choice := range m.choices {
-		cursor := " "
-		if m.cursor == i {
-			cursor = ">"
+
+	for _, t := range m.tasks {
+		var status string
+		if t.Completed == true {
+			status = "[✓]"
+		} else {
+			status = "[ ]"
 		}
-		checked := " "
-		if _, ok := m.selected[i]; ok {
-			checked = "✓"
-		}
-		line := fmt.Sprintf("%s [%s] %s", cursor, checked, choice)
+		line := fmt.Sprintf("%d %s: %s\nDue %s", t.ID, status, t.Task, t.DueDate.Format("2006-01-02"))
 		todoList = append(todoList, line)
 	}
+
 	todoBox := todoBorderStyle.Render(lipgloss.JoinVertical(lipgloss.Top, todoList...))
 
 	titleBox := borderStyle.Render(lipgloss.JoinVertical(lipgloss.Top, styledQuotes...))
@@ -389,4 +363,35 @@ func main() {
 		fmt.Printf("Alas, there's been an error: %v", err)
 		os.Exit(1)
 	}
+}
+
+func connectDB() *pgx.Conn {
+	conn, err := pgx.Connect(context.Background(),DATABASE_URL)
+	if err != nil {
+		log.Fatalf("Failed to connect to the database: %v", err)
+	}
+	return conn
+}
+
+func fetchTasks(conn *pgx.Conn) ([]Task, error) {
+	rows, err := conn.Query(context.Background(), `SELECT id, task, due, completion FROM "To-Do List"`)	
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []Task
+	for rows.Next() {
+		var t Task
+		if err := rows.Scan(&t.ID, &t.Task, &t.DueDate, &t.Completed); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+
+	if rows.Err() != nil {
+		return nil, rows.Err()
+	}
+
+	return tasks, nil
 }
